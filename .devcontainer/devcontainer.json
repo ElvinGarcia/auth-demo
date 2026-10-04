@@ -1,0 +1,38 @@
+{
+  "name": "Auth Demo",
+  "image": "dev-env",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "overrideCommand": true,
+  "runArgs": [
+    "--name=${localWorkspaceFolderBasename}-devcontainer",
+    "--rm"
+  ],
+
+  "forwardPorts": [8000],
+
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/tmp/auth-demo-venv",
+    "UV_LINK_MODE": "copy",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:/home/dev/.local/bin"
+  },
+
+  "postCreateCommand": "sh .devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "python.defaultInterpreterPath": "/tmp/auth-demo-venv/bin/python"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ]
+    }
+  }
+}
