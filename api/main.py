@@ -3,10 +3,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from api.auth import level0
 from api.db import init_db
 
 init_db()
 app = FastAPI(title="Auth Demo")
+
+app.include_router(level0.router)
 
 
 @app.get("/api/health")
