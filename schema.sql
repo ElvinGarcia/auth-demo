@@ -1,5 +1,5 @@
 -- The `level` column namespaces users per demo level (0-4).
--- NOTE: level 0 deliberately stores the password in plaintext. That is the lesson.
+-- NOTE: level 0 deliberately stores the password in plaintext.
 CREATE TABLE IF NOT EXISTS users (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   level      INTEGER NOT NULL,
