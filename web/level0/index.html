@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 0: Password only</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<main>
+  <h1>Level 0: Password only</h1>
+  <p class="sub">One factor. Everything an attacker needs is in the database.</p>
+
+  <div class="banner" role="note">
+    <strong>Insecure on purpose.</strong> Passwords here are stored in plaintext.
+    Use a fake password you have never used anywhere else.
+  </div>
+
+  <section class="card" id="auth-card">
+    <form id="auth-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username"
+             maxlength="32" required>
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="current-password" maxlength="128" required>
+
+      <button class="primary" type="submit">Log in</button>
+    </form>
+    <p class="muted" style="font-size:0.85rem;margin:12px 0 0">
+      No registration. A new username is created the first time you log in with it.
+    </p>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card hidden" id="session-card">
+    <p>Logged in as <strong id="who"></strong></p>
+    <p class="muted" id="note"></p>
+    <button class="secondary" type="button" id="logout">Log out</button>
+  </section>
+
+  <nav class="nav">
+    <a href="/">All levels</a>
+    <span class="muted">Attacker view: coming next</span>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+
+  const $ = (id) => document.getElementById(id);
+
+  function setMsg(text, kind = "") {
+    const el = $("msg");
+    el.textContent = text;
+    el.className = "msg " + kind;
+  }
+
+  function showSession(username, note = "") {
+    $("who").textContent = username;          // textContent, never innerHTML
+    $("note").textContent = note;
+    $("auth-card").classList.add("hidden");
+    $("session-card").classList.remove("hidden");
+  }
+
+  $("auth-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setMsg("Working...");
+    const res = await api("/api/level0/login", {
+      username: $("username").value.trim(),
+      password: $("password").value,
+    });
+    if (res.ok) {
+      $("password").value = "";
+      setMsg("");
+      showSession(
+        res.data.username,
+        res.data.created
+          ? "New account created. That password is now stored in plaintext."
+          : ""
+      );
+    } else {
+      setMsg(errorText(res), "err");
+    }
+  });
+
+  $("logout").addEventListener("click", async () => {
+    await api("/api/level0/logout", {});
+    $("session-card").classList.add("hidden");
+    $("auth-card").classList.remove("hidden");
+    setMsg("Logged out.", "ok");
+  });
+
+  // Restore the session if the cookie is still valid.
+  api("/api/level0/me").then((res) => {
+    if (res.ok) showSession(res.data.username);
+  });
+</script>
+</body>
+</html>
