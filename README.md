@@ -42,7 +42,7 @@ attacking real systems.
 ## Status
 
 - [x] Project scaffold (FastAPI, SQLite, dev container)
-- [ ] Level 0: password only
+- [x] Level 0: password only
 - [ ] Level 1: SMS (mock provider first, real SMS optional)
 - [ ] Level 2: email code
 - [ ] Level 3: TOTP
