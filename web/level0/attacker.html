@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 0: Attacker view</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<main class="wide">
+  <h1>Level 0: Attacker view</h1>
+  <p class="sub">You are the attacker, and you have just obtained a copy of the user table.</p>
+
+  <div class="banner" role="note">
+    Simulation against this demo only. The dump contains the seeded demo accounts
+    plus your own account if you are logged in.
+  </div>
+
+  <section class="card">
+    <h2>1. The dump, as stored</h2>
+    <p class="muted">Every password is readable. Nothing to crack.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Username</th><th>Password</th><th>Replay result</th></tr></thead>
+        <tbody id="plain-body"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="hidden-note"></p>
+    <button class="secondary" type="button" id="replay">Replay stolen credentials</button>
+    <div class="msg" id="replay-msg" role="status" aria-live="polite"></div>
+    <div class="msg" id="load-msg" role="status"></div>
+  </section>
+
+  <section class="card">
+    <h2>2. The same dump, if it had been hashed</h2>
+    <p class="muted">
+      Salted PBKDF2-SHA256, computed on the fly for illustration. The attacker must now
+      guess, and every guess costs real work.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Username</th><th>Stored value</th></tr></thead>
+        <tbody id="hash-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>What this shows</h2>
+    <ul>
+      <li><strong>Plaintext</strong> means one breach exposes every password at once, and
+        people reuse passwords on other sites.</li>
+      <li><strong>Hashing</strong> helps, but weak passwords like <code>qwerty</code> still
+        fall quickly to a wordlist.</li>
+      <li>Even a perfectly hashed password can still be phished, guessed online, or stuffed
+        from another site's breach. That is why the next levels add a second factor.</li>
+    </ul>
+    <p>Next: run the brute-force script from <code>scripts/</code> (see the README) and
+      watch the server answer unlimited guesses.</p>
+  </section>
+
+  <nav class="nav">
+    <a href="/level0/">Back to Level 0</a>
+    <a href="/">All levels</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api } from "/shared/common.js";
+
+  const $ = (id) => document.getElementById(id);
+  const resultCells = [];
+  let stolen = [];
+
+  // Usernames are user-controlled, so build cells with textContent, never innerHTML.
+  function td(text, className) {
+    const el = document.createElement("td");
+    el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  }
+
+  function row(...cells) {
+    const tr = document.createElement("tr");
+    cells.forEach((c) => tr.appendChild(c));
+    return tr;
+  }
+
+  async function load() {
+    const res = await api("/api/level0/attacker/breach");
+    if (!res.ok) {
+      $("load-msg").textContent = "The attacker view is switched off on this server.";
+      $("load-msg").className = "msg err";
+      $("replay").disabled = true;
+      return;
+    }
+
+    stolen = res.data.plaintext;
+    for (const r of stolen) {
+      const result = td("-", "muted");
+      resultCells.push(result);
+      $("plain-body").appendChild(row(td(r.username), td(r.password, "mono bad"), result));
+    }
+    for (const r of res.data.hashed) {
+      $("hash-body").appendChild(row(td(r.username), td(r.hash, "mono")));
+    }
+    if (res.data.hidden > 0) {
+      $("hidden-note").textContent =
+        `${res.data.hidden} other account(s) exist but are not shown here.`;
+    }
+  }
+
+  $("replay").addEventListener("click", async () => {
+    $("replay").disabled = true;
+    let succeeded = 0;
+    for (let i = 0; i < stolen.length; i++) {
+      const cell = resultCells[i];
+      cell.textContent = "trying...";
+      // credentials: "omit" keeps your own session cookie untouched.
+      const res = await fetch("/api/level0/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: stolen[i].username, password: stolen[i].password }),
+        credentials: "omit",
+      });
+      if (res.ok) succeeded++;
+      cell.textContent = res.ok ? "Logged in" : `Failed (${res.status})`;
+      cell.className = res.ok ? "good" : "bad";
+    }
+    const msg = $("replay-msg");
+    msg.textContent = succeeded === stolen.length
+      ? "Every stolen credential worked. No guessing, no cracking, and nothing unusual for the real users to notice."
+      : `${succeeded} of ${stolen.length} worked.`;
+    msg.className = "msg " + (succeeded === stolen.length ? "err" : "");
+  });
+
+  load();
+</script>
+</body>
+</html>

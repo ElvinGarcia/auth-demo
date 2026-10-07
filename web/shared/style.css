@@ -123,3 +123,17 @@ ul.levels li {
   border-bottom: 1px solid var(--border);
 }
 ul.levels li:last-child { border-bottom: 0; }
+
+/* attacker view */
+
+h2 { font-size: 1.1rem; margin: 0 0 8px; }
+main.wide { max-width: 860px; }
+.card + .card { margin-top: 16px; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.good { color: var(--ok); }
+.bad { color: var(--err); }
+
