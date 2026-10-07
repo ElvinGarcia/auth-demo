@@ -3,16 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Auth Demo</title>
+  <title>Auth Ladder Demo</title>
+  <link rel="stylesheet" href="/shared/style.css">
 </head>
 <body>
-  <h1>Auth Demo</h1>
-  <p>Backend status: <span id="status">checking...</span></p>
-  <script>
-    fetch("/api/health")
-      .then(r => r.json())
-      .then(d => document.getElementById("status").textContent = d.status)
-      .catch(() => document.getElementById("status").textContent = "down");
-  </script>
+<main>
+  <h1>Auth Ladder Demo</h1>
+  <p class="sub">Why a password alone is weak, and what each extra factor changes.</p>
+
+  <div class="banner" role="note">
+    Educational demo. Never enter real passwords.
+  </div>
+
+  <section class="card">
+    <ul class="levels">
+      <li><a href="/level0/">Level 0: Password only</a></li>
+      <li class="muted">Level 1: + SMS code (coming)</li>
+      <li class="muted">Level 2: + Email code (coming)</li>
+      <li class="muted">Level 3: + TOTP (coming)</li>
+      <li class="muted">Level 4: + FIDO2 / WebAuthn (coming)</li>
+    </ul>
+  </section>
+</main>
 </body>
 </html>
