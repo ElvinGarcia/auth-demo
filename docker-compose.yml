@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      # Use http://localhost:8000 in the browser (not 127.0.0.1), see README
+      - "8000:8000"
+    volumes:
+      # Keeps the SQLite database between restarts.
+      # Reset it with: docker compose down -v
+      - demo-data:/data
+
+volumes:
+  demo-data:

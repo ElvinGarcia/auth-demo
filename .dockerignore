@@ -1,0 +1,12 @@
+.git
+.gitignore
+.devcontainer
+.venv
+__pycache__
+*.py[oc]
+*.egg-info
+*.db
+.env
+.wrangler
+node_modules
+.pytest_cache
