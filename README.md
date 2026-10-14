@@ -97,6 +97,21 @@ Then open <http://localhost:8000>.
 > Always use `localhost`, not `127.0.0.1`. WebAuthn (Level 4) requires a real
 > hostname, and browsers treat `localhost` as a secure context.
 
+### Dev container
+
+1. Clone the repo and open the folder in VS Code.
+2. Run **Dev Containers: Reopen in Container** from the command palette.
+   The post-create script installs uv (if missing) and runs `uv sync`.
+3. In the container terminal, start the server:
+
+   ```sh
+   uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+4. Open <http://localhost:8000> in your browser.
+
+
+
 ### Useful URLs
 
 | URL | What it is |
