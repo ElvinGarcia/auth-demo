@@ -180,3 +180,4 @@ auth-demo/
   (domain verified with SPF/DKIM) for the hosted version.
 - **Stretch goals:** real SMS via a provider, a lookalike-hostname demo for
   WebAuthn origin binding, nightly reset of demo data.
+
