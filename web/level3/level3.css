@@ -1,0 +1,23 @@
+/* Level 3 only: the simulated mailbox. Colors come from the shared theme tokens. */
+.mailbox {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 16px;
+}
+.mailbox h2 { font-size: 0.95rem; margin: 0 0 2px; }
+.mailbox .sub { margin: 0 0 10px; font-size: 0.8rem; }
+.mail {
+  border-top: 1px solid var(--border);
+  padding: 10px 0 2px;
+  font-size: 0.9rem;
+}
+.mail small { display: block; color: var(--muted); }
+.mail .subject { font-weight: 600; margin: 2px 0; }
+.mail .text { white-space: pre-line; }
+.mailbox + .card, .mailbox + .mailbox { margin-top: 16px; }
+.steps { padding-left: 1.2rem; }
+.steps li { margin-bottom: 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row input { flex: 1 1 140px; width: auto; }

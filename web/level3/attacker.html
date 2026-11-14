@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 3: Attacker view</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level3/level3.css">
+</head>
+<body>
+<main class="wide">
+  <h1>Level 3: Attacker view</h1>
+  <p class="sub">The code goes to an inbox. Whose inbox is it really?</p>
+
+  <div class="banner" role="note">
+    Simulation against this demo only, using the seeded demo accounts and fake
+    <code>.invalid</code> addresses. Nothing real is involved.
+  </div>
+
+  <section class="card">
+    <h2>Scenario</h2>
+    <p>You have <strong>admin</strong>'s password (<code>admin123</code>) from the earlier
+      levels. Level 3 emails a code to <code>admin@demo.invalid</code>. Like many people,
+      admin uses the <strong>same password</strong> for their email account.</p>
+    <ol class="steps">
+      <li>
+        <strong>Log in with the known password.</strong> The site emails a code to admin's mailbox.
+        <div class="row" style="margin-top:8px">
+          <input id="pw" type="text" value="admin123" aria-label="Known password" maxlength="128">
+          <button class="secondary" type="button" id="login">Log in as admin</button>
+        </div>
+      </li>
+      <li>
+        <strong>Open admin's mailbox.</strong> Try the same password on the email account.
+        <div class="row" style="margin-top:8px">
+          <button class="secondary" type="button" id="open">Open admin's mailbox</button>
+          <span class="muted" id="open-state"></span>
+        </div>
+      </li>
+      <li>
+        <strong>Read the code</strong> in the mailbox below and enter it.
+        <div class="row" style="margin-top:8px">
+          <input id="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                 placeholder="6-digit code" aria-label="Code">
+          <button class="secondary" type="button" id="verify">Verify</button>
+        </div>
+      </li>
+    </ol>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="mailbox" aria-label="Mailbox open in this browser">
+    <h2>Mailbox open in your browser</h2>
+    <p class="sub muted">Until you open admin's mailbox (step 2), this stays empty: the code goes somewhere you cannot read.</p>
+    <div id="mailbox"></div>
+  </section>
+
+  <section class="card">
+    <h2>What this shows</h2>
+    <ul>
+      <li><strong>The code is only as safe as the mailbox.</strong> Anyone who can open the
+        inbox receives the code, and the site cannot tell them from the owner.</li>
+      <li><strong>Ways into a mailbox:</strong> a reused or guessed password (shown here),
+        a phishing page for the email provider, malware, or a forwarding rule quietly added
+        after an earlier breach. No SIM swap is needed, so the carrier's controls do not help.</li>
+      <li><strong>Email is the master key.</strong> Password resets also go to the mailbox, so
+        controlling it often means controlling every account that uses it.</li>
+      <li><strong>Same weakness as SMS in real time:</strong> a fake login page can ask a victim
+        for the code they just received and pass it on within its 10-minute life. This demo
+        does not build such a page.</li>
+      <li><strong>What the code still does well:</strong> it is single use, expires, and is capped
+        at 5 guesses. Try wrong codes in step 3 until it locks.</li>
+    </ul>
+    <p>The next level takes the second factor off the network entirely: a code computed on the
+      user's own device that nothing ever sends.</p>
+  </section>
+
+  <nav class="nav">
+    <a href="/level3/">Back to Level 3</a>
+    <a href="/">All levels</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { renderMailbox } from "/level3/mail.js";
+
+  const $ = (id) => document.getElementById(id);
+  const setMsg = (text, kind = "") => { $("msg").textContent = text; $("msg").className = "msg " + kind; };
+
+  async function refresh() {
+    const box = await api("/api/level3/mailbox");
+    if (box.ok) renderMailbox($("mailbox"), box.data.addresses, box.data.messages);
+    const t = await api("/api/level3/attacker/targets");
+    if (!t.ok) {
+      setMsg("The attacker view is switched off on this server.", "err");
+      for (const id of ["login", "open", "verify"]) $(id).disabled = true;
+      return;
+    }
+    const admin = t.data.targets.find((x) => x.username === "admin");
+    $("open-state").textContent = admin && admin.mailbox_open
+      ? `${admin.address} is open in this browser` : "Admin's mailbox is not open yet.";
+  }
+  refresh();
+  setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+
+  $("login").addEventListener("click", async () => {
+    const res = await api("/api/level3/login", { username: "admin", password: $("pw").value });
+    setMsg(res.ok ? `Password accepted. A code was emailed to ${res.data.email_hint}.` : errorText(res),
+           res.ok ? "ok" : "err");
+    refresh();
+  });
+
+  $("open").addEventListener("click", async () => {
+    const res = await api("/api/level3/mailbox/login", { username: "admin", password: $("pw").value });
+    setMsg(res.ok ? `Opened ${res.data.address}: the same password works there too.` : errorText(res),
+           res.ok ? "ok" : "err");
+    refresh();
+  });
+
+  $("verify").addEventListener("click", async () => {
+    const res = await api("/api/level3/verify", { code: $("code").value.trim() });
+    $("code").value = "";
+    if (res.ok) {
+      setMsg(`Logged in as ${res.data.username}. Both factors passed, and the real owner was never contacted.`, "err");
+    } else {
+      setMsg(errorText(res), "err");
+    }
+  });
+</script>
+</body>
+</html>
