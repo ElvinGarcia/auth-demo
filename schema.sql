@@ -81,3 +81,26 @@ CREATE TABLE IF NOT EXISTS email_challenges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_email_challenges_user ON email_challenges(user_id, created_at);
+
+-- Level 4 (TOTP).
+-- The secret is stored in PLAINTEXT on purpose: the server must be able to compute the same
+-- codes as the user's app, so it has to keep the secret in a usable form. The attacker view
+-- shows what a database leak means for a shared-secret factor.
+CREATE TABLE IF NOT EXISTS totp_secrets (
+  user_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  secret    TEXT NOT NULL,
+  confirmed INTEGER NOT NULL DEFAULT 0,   -- 1 once the user has proven their app works
+  last_step INTEGER NOT NULL DEFAULT 0    -- last accepted 30-second step: a code works once
+);
+
+-- One row per password-verified login attempt waiting for its code. Caps guessing.
+CREATE TABLE IF NOT EXISTS totp_challenges (
+  id         TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  used       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_totp_challenges_user ON totp_challenges(user_id, created_at);

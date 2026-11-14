@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 4: Authenticator app (TOTP)</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level4/level4.css">
+</head>
+<body>
+<main>
+  <h1>Level 4: Password + authenticator app</h1>
+  <p class="sub">Two factors: something you know, and a code your own device computes. Nothing is sent to you.</p>
+
+  <div class="banner" role="note">
+    Educational demo. Use a fake password you have never used anywhere else.
+  </div>
+
+  <section class="card" id="login-card">
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" autocomplete="username" maxlength="32" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" maxlength="128" required>
+      <button class="primary" type="submit">Continue</button>
+    </form>
+    <p class="muted" style="font-size:0.85rem;margin:12px 0 0">
+      No registration. A new username is created the first time you use it, and you then
+      set up an authenticator app for it.
+    </p>
+  </section>
+
+  <section class="card hidden" id="enroll-card">
+    <h2>Set up your authenticator</h2>
+    <ol class="steps">
+      <li>Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password...),
+        or type the key in by hand.</li>
+      <li>Enter the 6-digit code the app shows, below.</li>
+    </ol>
+    <div class="qr"><img id="qr" alt="QR code containing the authenticator setup key" width="200" height="200"></div>
+    <p class="muted" style="margin:0">Setup key:</p>
+    <p class="secretkey mono" id="secretkey"></p>
+    <p class="muted" style="font-size:0.85rem">This is shown once. After setup the server never displays it again.</p>
+    <details>
+      <summary>No authenticator app? Use the built-in demo one</summary>
+      <div id="enroll-auth"></div>
+    </details>
+  </section>
+
+  <section class="card hidden" id="code-card">
+    <form id="code-form">
+      <label for="code">6-digit code from your authenticator app</label>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code"
+             pattern="[0-9]{6}" maxlength="6" required>
+      <button class="primary" type="submit">Verify</button>
+    </form>
+    <details id="demo-auth-details">
+      <summary>Use the built-in demo authenticator</summary>
+      <p class="muted" style="font-size:0.85rem">Paste the setup key you were shown at enrollment.</p>
+      <div id="demo-auth"></div>
+    </details>
+    <button class="secondary" type="button" id="back" style="margin-top:12px">Start over</button>
+  </section>
+
+  <section class="card hidden" id="session-card">
+    <p>Logged in as <strong id="who"></strong></p>
+    <button class="secondary" type="button" id="logout">Log out</button>
+  </section>
+
+  <div class="msg" id="msg" role="status" aria-live="polite"></div>
+
+  <nav class="nav">
+    <a href="/">All levels</a>
+    <a href="/level4/attacker.html">Attacker view</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { mountAuthenticator } from "/level4/totp.js";
+
+  const $ = (id) => document.getElementById(id);
+  const cards = ["login-card", "enroll-card", "code-card", "session-card"];
+  const show = (...ids) => cards.forEach((id) => $(id).classList.toggle("hidden", !ids.includes(id)));
+  const setMsg = (text, kind = "") => { $("msg").textContent = text; $("msg").className = "msg " + kind; };
+
+  const enrollAuth = mountAuthenticator($("enroll-auth"), { label: "Setup key (loaded for you)" });
+  mountAuthenticator($("demo-auth"));
+
+  let enrolling = false;
+
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setMsg("Working...");
+    const res = await api("/api/level4/login", {
+      username: $("username").value.trim(), password: $("password").value,
+    });
+    if (!res.ok) return setMsg(errorText(res), "err");
+    $("password").value = "";
+    setMsg(res.data.created ? "New account created." : "", "ok");
+    if (res.data.step === "enroll") {
+      enrolling = true;
+      $("qr").src = res.data.enroll.qr;
+      $("secretkey").textContent = res.data.enroll.secret;
+      enrollAuth.setSecret(res.data.enroll.secret);
+      show("enroll-card", "code-card");
+      $("demo-auth-details").classList.add("hidden");   // the enrollment card has its own
+    } else {
+      enrolling = false;
+      $("demo-auth-details").classList.remove("hidden");
+      show("code-card");
+    }
+    $("code").focus();
+  });
+
+  $("code-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const res = await api("/api/level4/verify", { code: $("code").value.trim() });
+    $("code").value = "";
+    if (!res.ok) return setMsg(errorText(res), "err");
+    setMsg(enrolling ? "Authenticator confirmed. From now on you will need it to log in." : "", "ok");
+    $("who").textContent = res.data.username;
+    $("secretkey").textContent = "";
+    show("session-card");
+  });
+
+  $("back").addEventListener("click", () => { setMsg(""); show("login-card"); });
+
+  $("logout").addEventListener("click", async () => {
+    await api("/api/level4/logout", {});
+    show("login-card");
+    setMsg("Logged out.", "ok");
+  });
+
+  api("/api/level4/me").then((res) => {
+    if (res.ok) { $("who").textContent = res.data.username; show("session-card"); }
+  });
+</script>
+</body>
+</html>

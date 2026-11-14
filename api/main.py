@@ -12,6 +12,8 @@ from api.auth import (
     level2_attacker,
     level3,
     level3_attacker,
+    level4,
+    level4_attacker,
 )
 from api.db import init_db
 
@@ -20,6 +22,7 @@ level0.seed()
 level1.seed()
 level2.seed()
 level3.seed()
+level4.seed()
 
 app = FastAPI(title="Auth Demo")
 app.include_router(level0.router)
@@ -30,6 +33,8 @@ app.include_router(level2.router)
 app.include_router(level2_attacker.router)
 app.include_router(level3.router)
 app.include_router(level3_attacker.router)
+app.include_router(level4.router)
+app.include_router(level4_attacker.router)
 
 
 @app.get("/api/health")

@@ -1,0 +1,15 @@
+/* Level 4 only. Colors come from the shared theme tokens. */
+.qr { text-align: center; margin: 12px 0; }
+.qr img { width: 200px; height: 200px; background: #fff; padding: 8px; border-radius: 8px; border: 1px solid var(--border); }
+.secretkey { word-break: break-all; font-size: 0.95rem; }
+.authcode { font: 700 2rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.15em; margin: 8px 0 2px; }
+details { margin-top: 12px; }
+details summary { cursor: pointer; color: var(--accent); }
+.authbox { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-top: 16px; }
+.authbox h2 { font-size: 0.95rem; margin: 0 0 2px; }
+.steps { padding-left: 1.2rem; }
+.steps li { margin-bottom: 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row input { flex: 1 1 140px; width: auto; }
+.log { font-size: 0.85rem; margin-top: 8px; }
+.log div { padding: 2px 0; }

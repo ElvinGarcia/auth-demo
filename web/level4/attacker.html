@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 4: Attacker view</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level4/level4.css">
+</head>
+<body>
+<main class="wide">
+  <h1>Level 4: Attacker view</h1>
+  <p class="sub">Nothing is sent anywhere. What is left to attack?</p>
+
+  <div class="banner" role="note">
+    Simulation against this demo only, using the seeded demo accounts. Nothing real is involved.
+  </div>
+
+  <section class="card">
+    <h2>1. What the earlier attacks do here</h2>
+    <p>You know <strong>admin</strong>'s password (<code>admin123</code>). At Levels 2 and 3 you
+      stole the code in transit by swapping a SIM or opening a mailbox. Here the code is computed
+      on admin's own device and never travels, so there is nothing to swap or open.</p>
+    <div class="row">
+      <button class="secondary" type="button" id="login1">Log in as admin with the password</button>
+      <button class="secondary" type="button" id="guess">Guess 6 codes</button>
+    </div>
+    <div class="log" id="log1" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>2. The weak point: the server must keep the secret</h2>
+    <p>To check a code, the server needs the same secret as the user's app, so it stores it in a
+      usable form. Suppose you obtain a copy of the table (an SQL injection, a stolen backup,
+      a misconfigured dashboard):</p>
+    <button class="secondary" type="button" id="dump">Read the leaked secrets table</button>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Username</th><th>Stored secret</th></tr></thead>
+        <tbody id="dump-body"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="hidden-note"></p>
+    <p>An authenticator app is just those secrets plus a clock. Load admin's into one:</p>
+    <div class="authbox">
+      <h2>Your authenticator (computes codes offline)</h2>
+      <div id="auth"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="secondary" type="button" id="login2">Log in as admin: password + computed code</button>
+    </div>
+    <div class="log" id="log2" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>What this shows</h2>
+    <ul>
+      <li><strong>What TOTP stops:</strong> password-only attacks, credential stuffing, SIM swaps
+        and mailbox takeovers. There is no code in transit to steal, and guessing is capped
+        at 5 tries per login.</li>
+      <li><strong>What it does not stop:</strong> a leaked secret (shown above). Encrypting the
+        column helps if only the database leaks, but not if the server's key leaks with it. The same
+        applies to a malware-infected phone, a screenshot of the setup QR code, or a cloud
+        backup of the authenticator app.</li>
+      <li><strong>Real-time phishing still works.</strong> A fake login page can ask the victim for
+        the current code and pass it to the real site within its 30 to 90 second life. Nothing in
+        the code says which site is asking. This demo does not build such a page.</li>
+      <li><strong>Codes work once.</strong> The server remembers the last accepted time step, so a
+        code captured after the user has used it is worthless. Only a code used first, in time, helps.</li>
+      <li><strong>The setup moment is fragile.</strong> Until the first code is confirmed, whoever
+        knows the password can enroll their own device.</li>
+    </ul>
+    <p>The next level changes the design so that a server leak yields nothing useful: the server
+      stores only a public key, and the browser signs a challenge tied to the real site's name.</p>
+  </section>
+
+  <nav class="nav">
+    <a href="/level4/">Back to Level 4</a>
+    <a href="/">All levels</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { mountAuthenticator, totp } from "/level4/totp.js";
+
+  const $ = (id) => document.getElementById(id);
+  const auth = mountAuthenticator($("auth"), { label: "Secret key (paste one, or click a row above)" });
+
+  function line(container, text, kind = "") {
+    const d = document.createElement("div");
+    d.textContent = text;
+    if (kind) d.className = kind;
+    container.appendChild(d);
+  }
+  function td(text, className) {
+    const el = document.createElement("td");
+    el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  }
+
+  $("login1").addEventListener("click", async () => {
+    const res = await api("/api/level4/login", { username: "admin", password: "admin123" });
+    $("log1").replaceChildren();
+    line($("log1"), res.ok ? "Password accepted. The site now waits for a code from admin's authenticator."
+                           : errorText(res), res.ok ? "good" : "bad");
+  });
+
+  $("guess").addEventListener("click", async () => {
+    const out = $("log1");
+    out.replaceChildren();
+    for (let i = 1; i <= 6; i++) {
+      const code = String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
+      const res = await api("/api/level4/verify", { code });
+      line(out, `Guess ${i}: ${code} -> ${res.ok ? "accepted" : errorText(res)}`, res.ok ? "bad" : "");
+      if (res.status === 429) { line(out, "Locked. One in a million per guess, and only 5 guesses per login.", "good"); break; }
+    }
+  });
+
+  $("dump").addEventListener("click", async () => {
+    const res = await api("/api/level4/attacker/dump");
+    if (!res.ok) { line($("log2"), "The attacker view is switched off on this server.", "bad"); return; }
+    $("dump-body").replaceChildren();
+    for (const r of res.data.rows) {
+      const tr = document.createElement("tr");
+      tr.style.cursor = "pointer";
+      tr.title = "Click to load into the authenticator";
+      tr.append(td(r.username), td(r.secret, "mono bad"));
+      tr.addEventListener("click", () => auth.setSecret(r.secret));
+      if (r.username === "admin") auth.setSecret(r.secret);
+      $("dump-body").appendChild(tr);
+    }
+    $("hidden-note").textContent = res.data.hidden > 0
+      ? `${res.data.hidden} other account(s) exist but are not shown here.` : "";
+  });
+
+  $("login2").addEventListener("click", async () => {
+    const out = $("log2");
+    out.replaceChildren();
+    const secret = auth.getSecret();
+    if (!secret) return line(out, "Read the leaked table first so there is a secret to load.", "bad");
+    const login = await api("/api/level4/login", { username: "admin", password: "admin123" });
+    if (!login.ok) return line(out, errorText(login), "bad");
+    line(out, "Password accepted.");
+    const code = await totp(secret);
+    line(out, `Computed code from the stolen secret: ${code}`);
+    const res = await api("/api/level4/verify", { code });
+    line(out, res.ok ? `Logged in as ${res.data.username}. Both factors passed without admin's device.`
+                     : `Rejected: ${errorText(res)}`, res.ok ? "bad" : "good");
+  });
+</script>
+</body>
+</html>
