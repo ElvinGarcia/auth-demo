@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 2: SMS code</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level2/level2.css">
+</head>
+<body>
+<main>
+  <h1>Level 2: Password + SMS code</h1>
+  <p class="sub">Two factors: something you know, and a code sent to your phone.</p>
+
+  <div class="banner" role="note">
+    Educational demo. No real text messages are sent: the phone below is simulated.
+    Use a fake password you have never used anywhere else.
+  </div>
+
+  <section class="card" id="login-card">
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" autocomplete="username" maxlength="32" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" maxlength="128" required>
+      <button class="primary" type="submit">Continue</button>
+    </form>
+    <p class="muted" style="font-size:0.85rem;margin:12px 0 0">
+      No registration. A new username is created the first time you use it, and this
+      browser becomes that account's phone.
+    </p>
+  </section>
+
+  <section class="card hidden" id="code-card">
+    <form id="code-form">
+      <p>We texted a code to the number <strong id="hint"></strong>. Read it on the phone below.</p>
+      <label for="code">6-digit code</label>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code"
+             pattern="[0-9]{6}" maxlength="6" required>
+      <button class="primary" type="submit">Verify</button>
+    </form>
+    <button class="secondary" type="button" id="back" style="margin-top:12px">Start over</button>
+  </section>
+
+  <section class="card hidden" id="session-card">
+    <p>Logged in as <strong id="who"></strong></p>
+    <button class="secondary" type="button" id="logout">Log out</button>
+  </section>
+
+  <div class="msg" id="msg" role="status" aria-live="polite"></div>
+
+  <section class="phone" aria-label="Simulated phone">
+    <h2>Your phone (simulated)</h2>
+    <p class="sub muted">Texts for numbers this browser holds appear here.</p>
+    <div id="inbox"><p class="muted">No messages yet.</p></div>
+  </section>
+
+  <nav class="nav">
+    <a href="/">All levels</a>
+    <a href="/level2/attacker.html">Attacker view</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { renderInbox } from "/level2/phone.js";
+
+  const $ = (id) => document.getElementById(id);
+  const show = (...ids) => ["login-card", "code-card", "session-card"]
+    .forEach((id) => $(id).classList.toggle("hidden", !ids.includes(id)));
+  const setMsg = (text, kind = "") => { $("msg").textContent = text; $("msg").className = "msg " + kind; };
+
+  async function refreshInbox() {
+    const res = await api("/api/level2/inbox");
+    if (res.ok) renderInbox($("inbox"), res.data.messages);
+  }
+  refreshInbox();
+  setInterval(() => { if (!document.hidden) refreshInbox(); }, 2000);
+
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setMsg("Working...");
+    const res = await api("/api/level2/login", {
+      username: $("username").value.trim(), password: $("password").value,
+    });
+    if (!res.ok) return setMsg(errorText(res), "err");
+    $("password").value = "";
+    $("hint").textContent = res.data.phone_hint;
+    setMsg(res.data.created ? "New account created. This browser is now its phone." : "", "ok");
+    show("code-card");
+    $("code").focus();
+    refreshInbox();
+  });
+
+  $("code-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const res = await api("/api/level2/verify", { code: $("code").value.trim() });
+    $("code").value = "";
+    if (!res.ok) return setMsg(errorText(res), "err");
+    setMsg("");
+    $("who").textContent = res.data.username;
+    show("session-card");
+  });
+
+  $("back").addEventListener("click", () => { setMsg(""); show("login-card"); });
+
+  $("logout").addEventListener("click", async () => {
+    await api("/api/level2/logout", {});
+    show("login-card");
+    setMsg("Logged out.", "ok");
+  });
+
+  api("/api/level2/me").then((res) => {
+    if (res.ok) { $("who").textContent = res.data.username; show("session-card"); }
+  });
+</script>
+</body>
+</html>

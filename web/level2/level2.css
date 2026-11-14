@@ -1,0 +1,26 @@
+/* Level 2 only: the simulated phone. Colors come from the shared theme tokens. */
+.phone {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 22px;
+  padding: 14px;
+  margin-top: 16px;
+}
+.phone h2 { font-size: 0.95rem; margin: 0 0 2px; }
+.phone .sub { margin: 0 0 10px; font-size: 0.8rem; }
+.sms {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px 14px 14px 4px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+.sms small { display: block; color: var(--muted); margin-bottom: 2px; }
+.sms .code { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.08em; }
+.steps { padding-left: 1.2rem; }
+.steps li { margin-bottom: 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row input { flex: 1 1 140px; width: auto; }
+
+.phone + .card { margin-top: 16px; }

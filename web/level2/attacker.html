@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 2: Attacker view</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level2/level2.css">
+</head>
+<body>
+<main class="wide">
+  <h1>Level 2: Attacker view</h1>
+  <p class="sub">You know the victim's password. Can a text message still stop you?</p>
+
+  <div class="banner" role="note">
+    Simulation against this demo only. The SIM swap below moves a seeded demo
+    account's fake number to this browser. Nothing real is involved.
+  </div>
+
+  <section class="card">
+    <h2>Scenario</h2>
+    <p>You already have <strong>admin</strong>'s password (<code>admin123</code>): it was in the
+      Level 0 dump and falls to guessing at Level 1. Level 2 adds a code texted to
+      admin's phone. You do not have admin's phone, but you do not need it.</p>
+    <ol class="steps">
+      <li>
+        <strong>SIM swap.</strong> Convince the carrier to move admin's number to a SIM you control.
+        Carriers have been talked into this by phone, by insiders and by forged ID.
+        <div class="row" style="margin-top:8px">
+          <button class="secondary" type="button" id="swap">Swap admin's number to my SIM</button>
+          <span class="muted" id="swap-state"></span>
+        </div>
+      </li>
+      <li>
+        <strong>Log in with the known password.</strong> The site texts a code to admin's number,
+        which is now yours.
+        <div class="row" style="margin-top:8px">
+          <input id="pw" type="text" value="admin123" aria-label="Known password" maxlength="128">
+          <button class="secondary" type="button" id="login">Log in as admin</button>
+        </div>
+      </li>
+      <li>
+        <strong>Read the code on your phone</strong> (below) and enter it.
+        <div class="row" style="margin-top:8px">
+          <input id="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                 placeholder="6-digit code" aria-label="Code">
+          <button class="secondary" type="button" id="verify">Verify</button>
+        </div>
+      </li>
+    </ol>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="phone" aria-label="Attacker's phone">
+    <h2>Your SIM (simulated)</h2>
+    <p class="sub muted">Texts for numbers you hold appear here.</p>
+    <div id="inbox"><p class="muted">No messages yet.</p></div>
+  </section>
+
+  <section class="card">
+    <h2>What this shows</h2>
+    <ul>
+      <li><strong>The second factor was real.</strong> Without the swap, step 2 sends the code to
+        a phone you cannot read, and the attack stops. Level 1's password alone would have been enough.</li>
+      <li><strong>But the factor is a phone number, not a device.</strong> Whoever controls the
+        number receives the code, and the site cannot tell the difference.</li>
+      <li><strong>Phishing needs no swap.</strong> A fake login page can ask a victim for the code
+        they just received and pass it to the real site within its 5-minute life. The text
+        does not say which site is asking, and nothing in SMS binds the code to the real one.
+        This demo does not build such a page.</li>
+      <li><strong>What the code does well:</strong> it is single use, expires, and is capped at
+        5 guesses. Try entering wrong codes in step 3 until it locks.</li>
+    </ul>
+    <p>The next levels move the second factor off the phone number: email, then an
+      authenticator app, then a hardware-backed key.</p>
+  </section>
+
+  <nav class="nav">
+    <a href="/level2/">Back to Level 2</a>
+    <a href="/">All levels</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { renderInbox } from "/level2/phone.js";
+
+  const $ = (id) => document.getElementById(id);
+  const setMsg = (text, kind = "") => { $("msg").textContent = text; $("msg").className = "msg " + kind; };
+
+  async function refresh() {
+    const inbox = await api("/api/level2/inbox");
+    if (inbox.ok) renderInbox($("inbox"), inbox.data.messages);
+    const t = await api("/api/level2/attacker/targets");
+    if (!t.ok) {
+      setMsg("The attacker view is switched off on this server.", "err");
+      for (const id of ["swap", "login", "verify"]) $(id).disabled = true;
+      return;
+    }
+    const admin = t.data.targets.find((x) => x.username === "admin");
+    $("swap-state").textContent = admin && admin.held_by_you
+      ? `You now hold ${admin.number}` : "You do not hold admin's number yet.";
+  }
+  refresh();
+  setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+
+  $("swap").addEventListener("click", async () => {
+    const res = await api("/api/level2/attacker/sim-swap", { username: "admin" });
+    setMsg(res.ok ? "Number swapped. Texts for admin now arrive on your SIM." : errorText(res),
+           res.ok ? "ok" : "err");
+    refresh();
+  });
+
+  $("login").addEventListener("click", async () => {
+    const res = await api("/api/level2/login", { username: "admin", password: $("pw").value });
+    setMsg(res.ok ? `Password accepted. A code was sent to the number ${res.data.phone_hint}.`
+                  : errorText(res), res.ok ? "ok" : "err");
+    refresh();
+  });
+
+  $("verify").addEventListener("click", async () => {
+    const res = await api("/api/level2/verify", { code: $("code").value.trim() });
+    $("code").value = "";
+    if (res.ok) {
+      setMsg(`Logged in as ${res.data.username}. Both factors passed, and the real owner's phone was never touched.`, "err");
+    } else {
+      setMsg(errorText(res), "err");
+    }
+  });
+</script>
+</body>
+</html>
