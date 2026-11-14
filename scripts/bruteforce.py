@@ -1,4 +1,4 @@
-"""Online password guessing against Level 0.
+"""Online password guessing against YOUR OWN demo (Level 0 or 1).
 
 the server answers guess after guess
 without slowing down or locking the account.
@@ -16,9 +16,9 @@ from urllib.parse import urlparse
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
-def try_login(base_url: str, username: str, password: str) -> bool:
+def try_login(base_url: str, username: str, password: str, level: int = 0) -> bool:
     req = urllib.request.Request(
-        f"{base_url}/api/level0/login",
+        f"{base_url}/api/level{level}/login",
         data=json.dumps({"username": username, "password": password}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -38,6 +38,8 @@ def main() -> None:
     parser.add_argument("--users", default="admin,alice,bob,carol",
                         help="comma-separated usernames (default: the seeded accounts)")
     parser.add_argument("--wordlist", default=str(Path(__file__).with_name("wordlist.txt")))
+    parser.add_argument("--level", type=int, default=0, choices=[0, 1],
+                        help="which demo level to guess against (default: 0)")
     parser.add_argument("--allow-remote", action="store_true",
                         help="permit a non-local host (only for a deployment you own)")
     args = parser.parse_args()
@@ -57,7 +59,7 @@ def main() -> None:
             found = None
             for n, word in enumerate(words, start=1):
                 attempts += 1
-                if try_login(args.url, user, word):
+                if try_login(args.url, user, word, args.level):
                     found = (n, word)
                     break
             if found:

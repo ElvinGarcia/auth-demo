@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 1: Attacker view</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<main class="wide">
+  <h1>Level 1: Attacker view</h1>
+  <p class="sub">You hold a copy of the user table. What can you do with it now?</p>
+
+  <div class="banner" role="note">
+    Simulation against this demo only. The dump contains the seeded demo accounts
+    plus your own account if you are logged in.
+  </div>
+
+  <section class="card">
+    <h2>1. The dump, as stored</h2>
+    <p class="muted">Compare with Level 0, where this column held the passwords themselves.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Username</th><th>Stored value</th><th>Replay result</th></tr></thead>
+        <tbody id="body"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="hidden-note"></p>
+    <button class="secondary" type="button" id="replay">Try the stored values as passwords</button>
+    <div class="msg" id="replay-msg" role="status" aria-live="polite"></div>
+    <div class="msg" id="load-msg" role="status"></div>
+  </section>
+
+  <section class="card">
+    <h2>Reading the stored value</h2>
+    <p class="mono">pbkdf2_sha256 $ iterations $ salt $ hash</p>
+    <ul>
+      <li><strong>Salt:</strong> random per user, so two people with the same password get
+        different hashes and one precomputed table cannot cover everyone.</li>
+      <li><strong>Iterations:</strong> make every check deliberately slow. That cost is
+        what protects a stolen table.</li>
+      <li><strong>One-way:</strong> the server never needs the password back, only a
+        way to check a guess.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>What hashing fixed, and what it did not</h2>
+    <ul>
+      <li><strong>Fixed:</strong> a breach no longer hands over readable passwords, and the
+        replay above fails because the stored value is not a password.</li>
+      <li><strong>Not fixed:</strong> weak passwords such as <code>qwerty</code> are only as
+        strong as the person's choice, and anyone can still guess online without limit.
+        Run the guessing script with <code>--level 1</code> and compare its speed with Level 0.</li>
+      <li><strong>Not fixed:</strong> phishing. A password typed into a fake page works
+        for the attacker just as well, however it is stored.</li>
+    </ul>
+    <p>That gap is why the next level adds a second factor.</p>
+  </section>
+
+  <nav class="nav">
+    <a href="/level1/">Back to Level 1</a>
+    <a href="/">All levels</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api } from "/shared/common.js";
+
+  const $ = (id) => document.getElementById(id);
+  const resultCells = [];
+  let rows = [];
+
+  function td(text, className) {
+    const el = document.createElement("td");
+    el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  }
+
+  async function load() {
+    const res = await api("/api/level1/attacker/dump");
+    if (!res.ok) {
+      $("load-msg").textContent = "The attacker view is switched off on this server.";
+      $("load-msg").className = "msg err";
+      $("replay").disabled = true;
+      return;
+    }
+    rows = res.data.rows;
+    for (const r of rows) {
+      const result = td("-", "muted");
+      resultCells.push(result);
+      const tr = document.createElement("tr");
+      tr.append(td(r.username), td(r.stored, "mono"), result);
+      $("body").appendChild(tr);
+    }
+    if (res.data.hidden > 0) {
+      $("hidden-note").textContent = `${res.data.hidden} other account(s) exist but are not shown here.`;
+    }
+  }
+
+  $("replay").addEventListener("click", async () => {
+    $("replay").disabled = true;
+    let worked = 0;
+    for (let i = 0; i < rows.length; i++) {
+      resultCells[i].textContent = "trying...";
+      // credentials: "omit" keeps your own session cookie untouched.
+      const res = await fetch("/api/level1/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: rows[i].username, password: rows[i].stored }),
+        credentials: "omit",
+      });
+      if (res.ok) worked++;
+      resultCells[i].textContent = res.ok ? "Logged in" : `Rejected (${res.status})`;
+      resultCells[i].className = res.ok ? "bad" : "good";
+    }
+    const msg = $("replay-msg");
+    msg.textContent = worked === 0
+      ? "None worked. The stored value is not the password, so the dump alone does not log anyone in."
+      : `${worked} worked.`;
+    msg.className = "msg " + (worked === 0 ? "ok" : "err");
+  });
+
+  load();
+</script>
+</body>
+</html>

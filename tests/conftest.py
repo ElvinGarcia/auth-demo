@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 # Must be set before the app is imported so tests never touch demo.db
+os.environ["PBKDF2_ITERATIONS"] = "1000"  # fast hashing in tests
 os.environ["AUTH_DEMO_DB"] = str(Path(tempfile.mkdtemp()) / "test.db")
 
 import pytest  # noqa: E402
