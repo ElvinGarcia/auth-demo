@@ -194,7 +194,7 @@ auth-demo/
 
 - [Elvin Garcia](https://github.com/ElvinGarcia)
 - [JuanMatos1](https://github.com/JuanMatos1)
+- [Andrew](https://github.com/CyberDrewX)
 
 ## License
 
-TBD. Choose one (for example MIT) before relying on this beyond the class.
