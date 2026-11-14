@@ -1,0 +1,637 @@
+diff --git a/api/auth/level1.py b/api/auth/level1.py
+new file mode 100644
+index 0000000..7f9f50f
+--- /dev/null
++++ b/api/auth/level1.py
+@@ -0,0 +1,88 @@
++from fastapi import APIRouter, Cookie, HTTPException, Response
++from pydantic import BaseModel, Field
++
++from api.db import db
++from api.passwords import hash_password, verify_password
++from api.sessions import (
++    clear_session_cookie,
++    create_session,
++    delete_session,
++    get_user_by_session,
++    set_session_cookie,
++)
++
++LEVEL = 1
++router = APIRouter(prefix="/api/level1", tags=["level1"])
++
++# Same weak passwords as Level 0, but stored hashed. A hash cannot stop a weak
++# password from being guessed; it only stops the stored value being read.
++SEED_ACCOUNTS = [
++    ("admin", "admin123"),
++    ("alice", "password1"),
++    ("bob", "qwerty"),
++    ("carol", "letmein"),
++]
++
++
++def seed() -> None:
++    with db() as conn:
++        for username, password in SEED_ACCOUNTS:
++            exists = conn.execute(
++                "SELECT 1 FROM users WHERE level = ? AND username = ?", (LEVEL, username)
++            ).fetchone()
++            if not exists:
++                conn.execute(
++                    "INSERT INTO users (level, username, password) VALUES (?, ?, ?)",
++                    (LEVEL, username, hash_password(password)),
++                )
++
++
++class Credentials(BaseModel):
++    username: str = Field(min_length=1, max_length=32)
++    # Still weak on purpose: hashing does not fix a bad password policy.
++    password: str = Field(min_length=1, max_length=128)
++
++
++@router.post("/login")
++def login(creds: Credentials, response: Response):
++    # Still no rate limiting: online guessing works exactly as in Level 0.
++    with db() as conn:
++        row = conn.execute(
++            "SELECT id, password FROM users WHERE level = ? AND username = ?",
++            (LEVEL, creds.username),
++        ).fetchone()
++
++        created = False
++        if row is None:
++            # First login with a new username creates the account (no registration).
++            cur = conn.execute(
++                "INSERT OR IGNORE INTO users (level, username, password) VALUES (?, ?, ?)",
++                (LEVEL, creds.username, hash_password(creds.password)),
++            )
++            created = cur.rowcount == 1
++            row = conn.execute(
++                "SELECT id, password FROM users WHERE level = ? AND username = ?",
++                (LEVEL, creds.username),
++            ).fetchone()
++
++    if not created:
++        if not verify_password(creds.password, row["password"]):
++            raise HTTPException(status_code=401, detail="Invalid username or password")
++
++    set_session_cookie(response, create_session(row["id"]))
++    return {"username": creds.username, "created": created}
++
++
++@router.get("/me")
++def me(session: str | None = Cookie(default=None)):
++    user = get_user_by_session(session)
++    if user is None or user["level"] != LEVEL:
++        raise HTTPException(status_code=401, detail="Not logged in")
++    return {"username": user["username"], "level": user["level"]}
++
++
++@router.post("/logout")
++def logout(response: Response, session: str | None = Cookie(default=None)):
++    delete_session(session)
++    clear_session_cookie(response)
++    return {"ok": True}
+diff --git a/api/auth/level1_attacker.py b/api/auth/level1_attacker.py
+new file mode 100644
+index 0000000..2a21d2d
+--- /dev/null
++++ b/api/auth/level1_attacker.py
+@@ -0,0 +1,45 @@
++import os
++
++from fastapi import APIRouter, Cookie, HTTPException
++
++from api.auth.level1 import LEVEL, SEED_ACCOUNTS
++from api.db import db
++from api.sessions import get_user_by_session
++
++router = APIRouter(prefix="/api/level1/attacker", tags=["level1-attacker"])
++
++
++def _enabled() -> bool:
++    # Set ATTACKER_VIEW=0 to switch the whole attacker view off.
++    return os.environ.get("ATTACKER_VIEW", "1") == "1"
++
++
++@router.get("/dump")
++def dump(session: str | None = Cookie(default=None)):
++    """What a thief holding a copy of the user table sees at Level 1.
++
++    Seeded demo accounts plus the caller's own row, same privacy rule as Level 0.
++    """
++    if not _enabled():
++        raise HTTPException(status_code=404, detail="Not found")
++
++    me = get_user_by_session(session)
++    own_id = me["id"] if me and me["level"] == LEVEL else -1
++    seeded = [username for username, _ in SEED_ACCOUNTS]
++    marks = ",".join("?" * len(seeded))  # only "?" placeholders, never user input
++
++    with db() as conn:
++        rows = conn.execute(
++            f"""SELECT username, password FROM users
++                WHERE level = ? AND (username IN ({marks}) OR id = ?)
++                ORDER BY id""",
++            (LEVEL, *seeded, own_id),
++        ).fetchall()
++        total = conn.execute(
++            "SELECT COUNT(*) FROM users WHERE level = ?", (LEVEL,)
++        ).fetchone()[0]
++
++    return {
++        "rows": [{"username": r["username"], "stored": r["password"]} for r in rows],
++        "hidden": total - len(rows),
++    }
+diff --git a/api/main.py b/api/main.py
+index 6c9c4e2..e2b5888 100644
+--- a/api/main.py
++++ b/api/main.py
+@@ -3,19 +3,19 @@ from pathlib import Path
+ from fastapi import FastAPI
+ from fastapi.staticfiles import StaticFiles
+ 
+-from api.auth import level0
++from api.auth import level0, level0_attacker, level1, level1_attacker
+ from api.db import init_db
+ 
+-from api.auth import level0, level0_attacker
+-
+ init_db()
+ level0.seed()
++level1.seed()
+ 
+ app = FastAPI(title="Auth Demo")
+-app.include_router(level0.router)
+-
+ app.include_router(level0.router)
+ app.include_router(level0_attacker.router)
++app.include_router(level1.router)
++app.include_router(level1_attacker.router)
++
+ 
+ @app.get("/api/health")
+ def health():
+@@ -24,4 +24,4 @@ def health():
+ 
+ # Mounted last so /api routes take priority over static files
+ WEB_DIR = Path(__file__).parent.parent / "web"
+-app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+\ No newline at end of file
++app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+diff --git a/api/passwords.py b/api/passwords.py
+new file mode 100644
+index 0000000..5453153
+--- /dev/null
++++ b/api/passwords.py
+@@ -0,0 +1,45 @@
++"""Password hashing used by Level 1 and every level after it.
++
++PBKDF2-HMAC-SHA256 from the standard library: salted, deliberately slow,
++and the parameters are stored with the hash so they can be raised later.
++"""
++import hashlib
++import hmac
++import os
++import secrets
++
++# OWASP's 2023 guidance for PBKDF2-HMAC-SHA256 is 600,000 iterations.
++# Override with PBKDF2_ITERATIONS (tests lower it so they run fast; a
++# Cloudflare Worker's CPU limit may force a lower value, so measure there).
++DEFAULT_ITERATIONS = 600_000
++SCHEME = "pbkdf2_sha256"
++
++
++def _iterations() -> int:
++    return int(os.environ.get("PBKDF2_ITERATIONS", DEFAULT_ITERATIONS))
++
++
++def hash_password(password: str, iterations: int | None = None) -> str:
++    iterations = iterations or _iterations()
++    salt = secrets.token_bytes(16)  # unique per password: equal passwords, different hashes
++    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
++    return f"{SCHEME}${iterations}${salt.hex()}${digest.hex()}"
++
++
++def verify_password(password: str, stored: str) -> bool:
++    try:
++        scheme, iterations, salt_hex, digest_hex = stored.split("$")
++        if scheme != SCHEME:
++            return False
++        digest = hashlib.pbkdf2_hmac(
++            "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations)
++        )
++        # Constant-time comparison, so response timing leaks nothing about the hash.
++        return hmac.compare_digest(digest, bytes.fromhex(digest_hex))
++    except ValueError:
++        return False
++
++
++# Verified against when a username does not exist, so "unknown user" costs the
++# same time as "wrong password" and timing cannot be used to list usernames.
++DUMMY_HASH = hash_password("dummy-password-for-timing", iterations=1_000)
+diff --git a/scripts/bruteforce.py b/scripts/bruteforce.py
+index cccec75..aacbf71 100644
+--- a/scripts/bruteforce.py
++++ b/scripts/bruteforce.py
+@@ -1,4 +1,4 @@
+-"""Online password guessing against Level 0.
++"""Online password guessing against YOUR OWN demo (Level 0 or 1).
+ 
+ the server answers guess after guess
+ without slowing down or locking the account.
+@@ -16,9 +16,9 @@ from urllib.parse import urlparse
+ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+ 
+ 
+-def try_login(base_url: str, username: str, password: str) -> bool:
++def try_login(base_url: str, username: str, password: str, level: int = 0) -> bool:
+     req = urllib.request.Request(
+-        f"{base_url}/api/level0/login",
++        f"{base_url}/api/level{level}/login",
+         data=json.dumps({"username": username, "password": password}).encode(),
+         headers={"Content-Type": "application/json"},
+         method="POST",
+@@ -38,6 +38,8 @@ def main() -> None:
+     parser.add_argument("--users", default="admin,alice,bob,carol",
+                         help="comma-separated usernames (default: the seeded accounts)")
+     parser.add_argument("--wordlist", default=str(Path(__file__).with_name("wordlist.txt")))
++    parser.add_argument("--level", type=int, default=0, choices=[0, 1],
++                        help="which demo level to guess against (default: 0)")
+     parser.add_argument("--allow-remote", action="store_true",
+                         help="permit a non-local host (only for a deployment you own)")
+     args = parser.parse_args()
+@@ -57,7 +59,7 @@ def main() -> None:
+             found = None
+             for n, word in enumerate(words, start=1):
+                 attempts += 1
+-                if try_login(args.url, user, word):
++                if try_login(args.url, user, word, args.level):
+                     found = (n, word)
+                     break
+             if found:
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 5899e21..913551e 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -3,6 +3,7 @@ import tempfile
+ from pathlib import Path
+ 
+ # Must be set before the app is imported so tests never touch demo.db
++os.environ["PBKDF2_ITERATIONS"] = "1000"  # fast hashing in tests
+ os.environ["AUTH_DEMO_DB"] = str(Path(tempfile.mkdtemp()) / "test.db")
+ 
+ import pytest  # noqa: E402
+diff --git a/tests/test_level1.py b/tests/test_level1.py
+new file mode 100644
+index 0000000..099a8a6
+--- /dev/null
++++ b/tests/test_level1.py
+@@ -0,0 +1,90 @@
++from fastapi.testclient import TestClient
++
++from api.auth.level1 import seed
++from api.db import db
++from api.main import app
++from api.passwords import hash_password, verify_password
++
++DUMP = "/api/level1/attacker/dump"
++
++
++def login(client, username="dave", password="s3cret"):
++    return client.post("/api/level1/login", json={"username": username, "password": password})
++
++
++def stored(username):
++    with db() as conn:
++        return conn.execute(
++            "SELECT password FROM users WHERE level = 1 AND username = ?", (username,)
++        ).fetchone()["password"]
++
++
++def test_first_login_creates_account(client):
++    r = login(client)
++    assert r.json() == {"username": "dave", "created": True}
++    assert client.get("/api/level1/me").json() == {"username": "dave", "level": 1}
++
++
++def test_wrong_password_rejected_and_right_one_accepted(client):
++    login(client)
++    assert login(client, password="wrong").status_code == 401
++    assert login(client).json()["created"] is False
++
++
++def test_password_is_not_stored_in_plaintext(client):
++    login(client)
++    value = stored("dave")
++    assert "s3cret" not in value
++    assert value.startswith("pbkdf2_sha256$")
++
++
++def test_same_password_gives_different_hashes():
++    assert hash_password("same") != hash_password("same")
++
++
++def test_verify_password_roundtrip_and_garbage():
++    h = hash_password("pw")
++    assert verify_password("pw", h)
++    assert not verify_password("other", h)
++    assert not verify_password("pw", "not-a-hash")
++
++
++def test_stolen_hash_is_not_a_password(client):
++    """Replaying the stored value as the password does not log you in."""
++    seed()
++    assert login(client, "admin", stored("admin")).status_code == 401
++    assert login(client, "admin", "admin123").status_code == 200
++
++
++def test_levels_are_separate_accounts(client):
++    login(client)
++    r = client.post("/api/level0/login", json={"username": "dave", "password": "other"})
++    assert r.json()["created"] is True  # a different Level 0 account, not a clash
++
++
++def test_dump_shows_hashes_never_passwords(client):
++    seed()
++    rows = client.get(DUMP).json()["rows"]
++    assert {r["username"] for r in rows} >= {"admin", "alice", "bob", "carol"}
++    assert all(r["stored"].startswith("pbkdf2_sha256$") for r in rows)
++    assert "admin123" not in str(rows)
++
++
++def test_dump_hides_other_visitors(client):
++    seed()
++    login(client)
++    other = TestClient(app).get(DUMP).json()
++    assert all(r["username"] != "dave" for r in other["rows"])
++    assert other["hidden"] == 1
++
++
++def test_no_rate_limit_online_guessing_still_works(client):
++    seed()
++    for i in range(30):
++        assert login(client, "admin", f"guess{i}").status_code == 401
++    assert login(client, "admin", "admin123").status_code == 200
++
++
++def test_attacker_view_can_be_switched_off(client, monkeypatch):
++    monkeypatch.setenv("ATTACKER_VIEW", "0")
++    assert client.get(DUMP).status_code == 404
+diff --git a/web/index.html b/web/index.html
+index 643f781..5c7d846 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -18,10 +18,11 @@
+   <section class="card">
+     <ul class="levels">
+       <li><a href="/level0/">Level 0: Password only</a></li>
+-      <li class="muted">Level 1: + SMS code (coming)</li>
+-      <li class="muted">Level 2: + Email code (coming)</li>
+-      <li class="muted">Level 3: + TOTP (coming)</li>
+-      <li class="muted">Level 4: + FIDO2 / WebAuthn (coming)</li>
++      <li><a href="/level1/">Level 1: Hashed passwords</a></li>
++      <li class="muted">Level 2: + SMS code (coming)</li>
++      <li class="muted">Level 3: + Email code (coming)</li>
++      <li class="muted">Level 4: + TOTP (coming)</li>
++      <li class="muted">Level 5: + FIDO2 / WebAuthn (coming)</li>
+     </ul>
+   </section>
+ </main>
+diff --git a/web/level1/attacker.html b/web/level1/attacker.html
+new file mode 100644
+index 0000000..e7b2b63
+--- /dev/null
++++ b/web/level1/attacker.html
+@@ -0,0 +1,128 @@
++<!doctype html>
++<html lang="en">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1">
++  <title>Level 1: Attacker view</title>
++  <link rel="stylesheet" href="/shared/style.css">
++</head>
++<body>
++<main class="wide">
++  <h1>Level 1: Attacker view</h1>
++  <p class="sub">You hold a copy of the user table. What can you do with it now?</p>
++
++  <div class="banner" role="note">
++    Simulation against this demo only. The dump contains the seeded demo accounts
++    plus your own account if you are logged in.
++  </div>
++
++  <section class="card">
++    <h2>1. The dump, as stored</h2>
++    <p class="muted">Compare with Level 0, where this column held the passwords themselves.</p>
++    <div class="scroll">
++      <table>
++        <thead><tr><th>Username</th><th>Stored value</th><th>Replay result</th></tr></thead>
++        <tbody id="body"></tbody>
++      </table>
++    </div>
++    <p class="muted" id="hidden-note"></p>
++    <button class="secondary" type="button" id="replay">Try the stored values as passwords</button>
++    <div class="msg" id="replay-msg" role="status" aria-live="polite"></div>
++    <div class="msg" id="load-msg" role="status"></div>
++  </section>
++
++  <section class="card">
++    <h2>Reading the stored value</h2>
++    <p class="mono">pbkdf2_sha256 $ iterations $ salt $ hash</p>
++    <ul>
++      <li><strong>Salt:</strong> random per user, so two people with the same password get
++        different hashes and one precomputed table cannot cover everyone.</li>
++      <li><strong>Iterations:</strong> make every check deliberately slow. That cost is
++        what protects a stolen table.</li>
++      <li><strong>One-way:</strong> the server never needs the password back, only a
++        way to check a guess.</li>
++    </ul>
++  </section>
++
++  <section class="card">
++    <h2>What hashing fixed, and what it did not</h2>
++    <ul>
++      <li><strong>Fixed:</strong> a breach no longer hands over readable passwords, and the
++        replay above fails because the stored value is not a password.</li>
++      <li><strong>Not fixed:</strong> weak passwords such as <code>qwerty</code> are only as
++        strong as the person's choice, and anyone can still guess online without limit.
++        Run the guessing script with <code>--level 1</code> and compare its speed with Level 0.</li>
++      <li><strong>Not fixed:</strong> phishing. A password typed into a fake page works
++        for the attacker just as well, however it is stored.</li>
++    </ul>
++    <p>That gap is why the next level adds a second factor.</p>
++  </section>
++
++  <nav class="nav">
++    <a href="/level1/">Back to Level 1</a>
++    <a href="/">All levels</a>
++  </nav>
++</main>
++
++<script type="module">
++  import { api } from "/shared/common.js";
++
++  const $ = (id) => document.getElementById(id);
++  const resultCells = [];
++  let rows = [];
++
++  function td(text, className) {
++    const el = document.createElement("td");
++    el.textContent = text;
++    if (className) el.className = className;
++    return el;
++  }
++
++  async function load() {
++    const res = await api("/api/level1/attacker/dump");
++    if (!res.ok) {
++      $("load-msg").textContent = "The attacker view is switched off on this server.";
++      $("load-msg").className = "msg err";
++      $("replay").disabled = true;
++      return;
++    }
++    rows = res.data.rows;
++    for (const r of rows) {
++      const result = td("-", "muted");
++      resultCells.push(result);
++      const tr = document.createElement("tr");
++      tr.append(td(r.username), td(r.stored, "mono"), result);
++      $("body").appendChild(tr);
++    }
++    if (res.data.hidden > 0) {
++      $("hidden-note").textContent = `${res.data.hidden} other account(s) exist but are not shown here.`;
++    }
++  }
++
++  $("replay").addEventListener("click", async () => {
++    $("replay").disabled = true;
++    let worked = 0;
++    for (let i = 0; i < rows.length; i++) {
++      resultCells[i].textContent = "trying...";
++      // credentials: "omit" keeps your own session cookie untouched.
++      const res = await fetch("/api/level1/login", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ username: rows[i].username, password: rows[i].stored }),
++        credentials: "omit",
++      });
++      if (res.ok) worked++;
++      resultCells[i].textContent = res.ok ? "Logged in" : `Rejected (${res.status})`;
++      resultCells[i].className = res.ok ? "bad" : "good";
++    }
++    const msg = $("replay-msg");
++    msg.textContent = worked === 0
++      ? "None worked. The stored value is not the password, so the dump alone does not log anyone in."
++      : `${worked} worked.`;
++    msg.className = "msg " + (worked === 0 ? "ok" : "err");
++  });
++
++  load();
++</script>
++</body>
++</html>
+diff --git a/web/level1/index.html b/web/level1/index.html
+new file mode 100644
+index 0000000..2a925a1
+--- /dev/null
++++ b/web/level1/index.html
+@@ -0,0 +1,97 @@
++<!doctype html>
++<html lang="en">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1">
++  <title>Level 1: Hashed passwords</title>
++  <link rel="stylesheet" href="/shared/style.css">
++</head>
++<body>
++<main>
++  <h1>Level 1: Hashed passwords</h1>
++  <p class="sub">Still one factor, but the database no longer holds the passwords themselves.</p>
++
++  <div class="banner" role="note">
++    Educational demo. Passwords are hashed here, but guessing is still unlimited.
++    Use a fake password you have never used anywhere else.
++  </div>
++
++  <section class="card" id="auth-card">
++    <form id="auth-form">
++      <label for="username">Username</label>
++      <input id="username" name="username" autocomplete="username" maxlength="32" required>
++
++      <label for="password">Password</label>
++      <input id="password" name="password" type="password"
++             autocomplete="current-password" maxlength="128" required>
++
++      <button class="primary" type="submit">Log in</button>
++    </form>
++    <p class="muted" style="font-size:0.85rem;margin:12px 0 0">
++      No registration. A new username is created the first time you log in with it.
++    </p>
++    <div class="msg" id="msg" role="status" aria-live="polite"></div>
++  </section>
++
++  <section class="card hidden" id="session-card">
++    <p>Logged in as <strong id="who"></strong></p>
++    <p class="muted" id="note"></p>
++    <button class="secondary" type="button" id="logout">Log out</button>
++  </section>
++
++  <nav class="nav">
++    <a href="/">All levels</a>
++    <a href="/level1/attacker.html">Attacker view</a>
++  </nav>
++</main>
++
++<script type="module">
++  import { api, errorText } from "/shared/common.js";
++
++  const $ = (id) => document.getElementById(id);
++
++  function setMsg(text, kind = "") {
++    const el = $("msg");
++    el.textContent = text;
++    el.className = "msg " + kind;
++  }
++
++  function showSession(username, note = "") {
++    $("who").textContent = username;
++    $("note").textContent = note;
++    $("auth-card").classList.add("hidden");
++    $("session-card").classList.remove("hidden");
++  }
++
++  $("auth-form").addEventListener("submit", async (event) => {
++    event.preventDefault();
++    setMsg("Working...");
++    const res = await api("/api/level1/login", {
++      username: $("username").value.trim(),
++      password: $("password").value,
++    });
++    if (res.ok) {
++      $("password").value = "";
++      setMsg("");
++      showSession(
++        res.data.username,
++        res.data.created ? "New account created. Only a salted hash of that password is stored." : ""
++      );
++    } else {
++      setMsg(errorText(res), "err");
++    }
++  });
++
++  $("logout").addEventListener("click", async () => {
++    await api("/api/level1/logout", {});
++    $("session-card").classList.add("hidden");
++    $("auth-card").classList.remove("hidden");
++    setMsg("Logged out.", "ok");
++  });
++
++  api("/api/level1/me").then((res) => {
++    if (res.ok) showSession(res.data.username);
++  });
++</script>
++</body>
++</html>
