@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 5: Attacker view</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level5/level5.css">
+</head>
+<body>
+<main class="wide">
+  <h1>Level 5: Attacker view</h1>
+  <p class="sub">The attacks that worked on every earlier level, tried one more time.</p>
+
+  <div class="banner" role="note">
+    Simulation against this demo only, using the seeded demo accounts. Nothing real is involved.
+  </div>
+
+  <section class="card">
+    <h2>1. Password known, no key</h2>
+    <p>You have <strong>admin</strong>'s password (<code>admin123</code>). There is no code to
+      intercept, no mailbox to open and no secret to leak. All you can do is answer the
+      challenge, and only admin's key can sign it.</p>
+    <button class="secondary" type="button" id="try1">Log in as admin, then answer with a made-up response</button>
+    <div class="log" id="log1" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>2. The leaked table</h2>
+    <p>At Level 4 a leaked table handed over the secrets. Here the server stores only
+      <strong>public</strong> keys, which are meant to be shared. Suppose you copy the whole table:</p>
+    <button class="secondary" type="button" id="dump">Read the leaked credentials table</button>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Username</th><th>Credential ID</th><th>Public key</th></tr></thead>
+        <tbody id="dump-body"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="hidden-note"></p>
+    <p>A public key can verify a signature but cannot make one. Try to use it anyway:</p>
+    <button class="secondary" type="button" id="try2">Log in as admin using the leaked public key</button>
+    <div class="log" id="log2" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>3. Replaying a recorded login</h2>
+    <p>Suppose you recorded a real login on the network. Log in on the
+      <a href="/level5/">Level 5 page</a> first: this browser then saves a copy of what was sent,
+      standing in for your recording. Replay it against a fresh login:</p>
+    <p class="muted" id="wiretap-state"></p>
+    <div class="row">
+      <input id="replay-pw" type="text" placeholder="Password you already know" maxlength="128"
+             aria-label="Known password" style="max-width:260px">
+      <button class="secondary" type="button" id="try3">Replay the recorded login</button>
+    </div>
+    <div class="log" id="log3" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>4. A look-alike site</h2>
+    <p>A phishing page cannot get a usable response either. Your browser, not the server,
+      refuses first: it only offers a key made for the exact site name, and it writes the real
+      origin into everything it signs, so a response made on a look-alike site is rejected here.</p>
+    <p>See it yourself: register a key at <code>http://localhost:8000/level5/</code>, then open the
+      same page as <code>http://127.0.0.1:8000/level5/</code>. The browser will not use the key, or even
+      allow registration, because that address is not the site name the key belongs to.</p>
+  </section>
+
+  <section class="card">
+    <h2>What this shows</h2>
+    <ul>
+      <li><strong>A leak yields nothing.</strong> The server holds only public keys, so there is no
+        shared secret to steal.</li>
+      <li><strong>Nothing can be replayed.</strong> Each login signs a fresh random challenge that
+        works once.</li>
+      <li><strong>Phishing fails by design.</strong> The signature covers the site's real name, so a
+        fake site cannot relay it. Earlier levels relied on the user spotting the fake.</li>
+      <li><strong>A cloned key is noticed.</strong> The key keeps a counter; one that goes backwards
+        is rejected. (Synced passkeys often keep it at zero, so this protects hardware keys best.)</li>
+    </ul>
+    <h2 style="margin-top:20px">What is still left at the top</h2>
+    <ul>
+      <li><strong>Stolen sessions.</strong> After login, the session cookie is the credential. A
+        malicious extension, malware, or a proxy that relays the whole site can take it.</li>
+      <li><strong>Enrollment.</strong> Until a first key is registered, whoever knows the password can
+        register their own. Seeded accounts here avoid it; real sites need a safe enrollment path.</li>
+      <li><strong>Recovery and fallback.</strong> If the site also accepts SMS, email codes or a
+        recovery question when a key is lost, an attacker simply picks the weakest option.
+        The strongest factor protects nothing if a weaker one is also accepted.</li>
+      <li><strong>The device itself.</strong> A passkey is only as safe as the phone or laptop and its
+        account that holds it.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>The whole ladder</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Level</th><th>What finally beats it</th></tr></thead>
+        <tbody>
+          <tr><td>0 Plaintext</td><td>Read the database, or guess</td></tr>
+          <tr><td>1 Hashed</td><td>Guess online, reuse stolen passwords, phish</td></tr>
+          <tr><td>2 SMS</td><td>SIM swap, or relay the code through a fake page</td></tr>
+          <tr><td>3 Email</td><td>Take over the mailbox, or relay the code</td></tr>
+          <tr><td>4 TOTP</td><td>Leak the stored secret, or relay the code in real time</td></tr>
+          <tr><td>5 FIDO2</td><td>Steal the session after login, or abuse a weaker recovery path</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <nav class="nav">
+    <a href="/level5/">Back to Level 5</a>
+    <a href="/">All levels</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { b64uToBuf, bufToB64u } from "/level5/webauthn.js";
+
+  const $ = (id) => document.getElementById(id);
+  const enc = new TextEncoder();
+
+  function line(container, text, kind = "") {
+    const d = document.createElement("div");
+    d.textContent = text;
+    if (kind) d.className = kind;
+    container.appendChild(d);
+  }
+  function td(text, className) {
+    const el = document.createElement("td");
+    el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  }
+  function wiretap() {
+    try { return JSON.parse(localStorage.getItem("level5.wiretap")); } catch { return null; }
+  }
+
+  // A made-up assertion for a given credential: well-formed, but not signed by any key.
+  function forgedAssertion(options, credentialId, signatureB64u) {
+    const clientData = enc.encode(JSON.stringify({
+      type: "webauthn.get", challenge: options.challenge, origin: location.origin, crossOrigin: false,
+    }));
+    return {
+      id: credentialId, rawId: credentialId, type: "public-key",
+      response: {
+        clientDataJSON: bufToB64u(clientData),
+        authenticatorData: bufToB64u(new Uint8Array(37).buffer),
+        signature: signatureB64u,
+      },
+      clientExtensionResults: {},
+    };
+  }
+
+  async function startLogin(password) {
+    const res = await api("/api/level5/login", { username: "admin", password });
+    if (!res.ok) return { error: errorText(res) };
+    return { options: res.data.options, step: res.data.step };
+  }
+
+  $("try1").addEventListener("click", async () => {
+    const out = $("log1");
+    out.replaceChildren();
+    const start = await startLogin("admin123");
+    if (start.error) return line(out, start.error, "bad");
+    line(out, "Password accepted. The site now asks admin's key to sign a fresh challenge.");
+    const fake = forgedAssertion(start.options, start.options.allowCredentials[0].id, bufToB64u(new Uint8Array(64).buffer));
+    const res = await api("/api/level5/authenticate/finish", { credential: fake });
+    line(out, res.ok ? "Logged in." : `Rejected: ${errorText(res)}`, res.ok ? "bad" : "good");
+  });
+
+  $("dump").addEventListener("click", async () => {
+    const res = await api("/api/level5/attacker/dump");
+    if (!res.ok) return line($("log2"), "The attacker view is switched off on this server.", "bad");
+    $("dump-body").replaceChildren();
+    for (const r of res.data.rows) {
+      const tr = document.createElement("tr");
+      tr.append(td(r.username), td(r.credential_id, "mono small"), td(r.public_key, "mono small"));
+      $("dump-body").appendChild(tr);
+    }
+    $("hidden-note").textContent = res.data.hidden > 0
+      ? `${res.data.hidden} other account(s) exist but are not shown here.` : "";
+  });
+
+  $("try2").addEventListener("click", async () => {
+    const out = $("log2");
+    out.replaceChildren();
+    const dump = await api("/api/level5/attacker/dump");
+    if (!dump.ok) return line(out, "The attacker view is switched off on this server.", "bad");
+    const admin = dump.data.rows.find((r) => r.username === "admin");
+    const start = await startLogin("admin123");
+    if (start.error) return line(out, start.error, "bad");
+    line(out, "Password accepted. Presenting the leaked public key in place of a signature...");
+    const fake = forgedAssertion(start.options, admin.credential_id, admin.public_key);
+    const res = await api("/api/level5/authenticate/finish", { credential: fake });
+    line(out, res.ok ? "Logged in." : `Rejected: ${errorText(res)}`, res.ok ? "bad" : "good");
+    if (!res.ok) line(out, "A public key can check a signature. It cannot create one.");
+  });
+
+  function refreshTap() {
+    const tap = wiretap();
+    $("wiretap-state").textContent = tap
+      ? `Recorded: a successful login as ${tap.username} on this browser.`
+      : "Nothing recorded yet. Log in on the Level 5 page first.";
+  }
+  refreshTap();
+
+  $("try3").addEventListener("click", async () => {
+    const out = $("log3");
+    out.replaceChildren();
+    const tap = wiretap();
+    if (!tap) return line(out, "Nothing recorded yet. Log in on the Level 5 page first.", "bad");
+    const password = $("replay-pw").value;
+    if (!password) return line(out, `Enter ${tap.username}'s password: the replay still needs to get past step 1.`, "bad");
+    const login = await api("/api/level5/login", { username: tap.username, password });
+    if (!login.ok) return line(out, errorText(login), "bad");
+    line(out, "Password accepted. A new login started, with a new challenge.");
+    const res = await api("/api/level5/authenticate/finish", { credential: tap.credential });
+    line(out, res.ok ? "Logged in." : `Rejected: ${errorText(res)}`, res.ok ? "bad" : "good");
+    if (!res.ok) line(out, "The recording signed an old challenge. Each login uses a new one.");
+  });
+</script>
+</body>
+</html>

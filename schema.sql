@@ -104,3 +104,29 @@ CREATE TABLE IF NOT EXISTS totp_challenges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_totp_challenges_user ON totp_challenges(user_id, created_at);
+
+-- Level 5 (FIDO2 / WebAuthn).
+-- Only PUBLIC keys are stored. The private key never leaves the user's authenticator,
+-- so a copy of this table lets nobody log in. Compare with the TOTP secrets of Level 4.
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  credential_id TEXT PRIMARY KEY,            -- base64url
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  public_key    TEXT NOT NULL,               -- base64url COSE key
+  sign_count    INTEGER NOT NULL DEFAULT 0,  -- a counter that goes backwards means a cloned key
+  created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- One row per password-verified login attempt. `challenge` is the random value the
+-- authenticator must sign. It works once: any attempt to use it burns it.
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id         TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,                  -- 'register' or 'authenticate'
+  challenge  TEXT NOT NULL,                  -- base64url
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials(user_id);
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_user ON webauthn_challenges(user_id, created_at);

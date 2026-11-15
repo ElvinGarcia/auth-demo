@@ -1,0 +1,10 @@
+/* Level 5 only. Colors come from the shared theme tokens. */
+.steps { padding-left: 1.2rem; }
+.steps li { margin-bottom: 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.log { font-size: 0.85rem; margin-top: 8px; }
+.log div { padding: 2px 0; }
+.mono.small { font-size: 0.78rem; }
+.warn { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text);
+        padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 16px; }
+.big { font-size: 1.05rem; padding: 12px; }
