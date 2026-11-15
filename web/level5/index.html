@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 5: Security key / passkey (FIDO2)</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <link rel="stylesheet" href="/level5/level5.css">
+</head>
+<body>
+<main>
+  <h1>Level 5: Password + security key</h1>
+  <p class="sub">Two factors: something you know, and a hardware-backed key that only signs for the real site.</p>
+
+  <div class="banner" role="note">
+    Educational demo. Use a fake password you have never used anywhere else.
+  </div>
+  <div class="warn hidden" id="origin-warn" role="alert"></div>
+  <div class="warn hidden" id="unsupported" role="alert">
+    This browser does not support WebAuthn, so this level cannot run here.
+  </div>
+
+  <section class="card" id="login-card">
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" autocomplete="username webauthn" maxlength="32" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" maxlength="128" required>
+      <button class="primary" type="submit">Continue</button>
+    </form>
+    <p class="muted" style="font-size:0.85rem;margin:12px 0 0">
+      No registration. A new username is created the first time you use it, and you then
+      register a security key or passkey for it (Touch ID, Windows Hello, a phone, or a USB key).
+    </p>
+  </section>
+
+  <section class="card hidden" id="register-card">
+    <h2>Register a security key</h2>
+    <p>Your browser will ask you to create a passkey or insert a security key. The server
+      receives only the <strong>public</strong> half; the private half never leaves your device.</p>
+    <button class="primary big" type="button" id="register">Register a security key</button>
+    <button class="secondary" type="button" id="back1" style="margin-top:12px">Start over</button>
+  </section>
+
+  <section class="card hidden" id="auth-card">
+    <h2>Use your security key</h2>
+    <p>Approve the prompt with the key you registered for this account.</p>
+    <button class="primary big" type="button" id="authenticate">Use my security key</button>
+    <button class="secondary" type="button" id="back2" style="margin-top:12px">Start over</button>
+  </section>
+
+  <section class="card hidden" id="session-card">
+    <p>Logged in as <strong id="who"></strong></p>
+    <button class="secondary" type="button" id="logout">Log out</button>
+  </section>
+
+  <div class="msg" id="msg" role="status" aria-live="polite"></div>
+
+  <nav class="nav">
+    <a href="/">All levels</a>
+    <a href="/level5/attacker.html">Attacker view</a>
+  </nav>
+</main>
+
+<script type="module">
+  import { api, errorText } from "/shared/common.js";
+  import { supported, createCredential, getAssertion, explain } from "/level5/webauthn.js";
+
+  const $ = (id) => document.getElementById(id);
+  const cards = ["login-card", "register-card", "auth-card", "session-card"];
+  const show = (id) => cards.forEach((c) => $(c).classList.toggle("hidden", c !== id));
+  const setMsg = (text, kind = "") => { $("msg").textContent = text; $("msg").className = "msg " + kind; };
+
+  let pending = null;       // { options } from the password step
+  let username = "";
+
+  if (!supported) $("unsupported").classList.remove("hidden");
+
+  // WebAuthn only works when the page's origin is one the server expects.
+  api("/api/level5/config").then((res) => {
+    if (res.ok && !res.data.origins.includes(location.origin)) {
+      const warn = $("origin-warn");
+      warn.textContent = `This page is at ${location.origin}, but the server only accepts ` +
+        `${res.data.origins.join(", ")}. Registration will fail. Open the expected address, ` +
+        `or set WEBAUTHN_ORIGINS (and WEBAUTHN_RP_ID) on the server.`;
+      warn.classList.remove("hidden");
+    }
+  });
+
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setMsg("Working...");
+    username = $("username").value.trim();
+    const res = await api("/api/level5/login", { username, password: $("password").value });
+    if (!res.ok) return setMsg(errorText(res), "err");
+    $("password").value = "";
+    pending = res.data;
+    setMsg(res.data.created ? "New account created." : "", "ok");
+    show(res.data.step === "register" ? "register-card" : "auth-card");
+  });
+
+  // The WebAuthn calls sit in button handlers: browsers require a fresh user gesture.
+  $("register").addEventListener("click", async () => {
+    setMsg("");
+    try {
+      const credential = await createCredential(pending.options);
+      const res = await api("/api/level5/register/finish", { credential });
+      if (!res.ok) return setMsg(errorText(res), "err");
+      setMsg("Security key registered. From now on you will need it to log in.", "ok");
+      $("who").textContent = res.data.username;
+      show("session-card");
+    } catch (err) {
+      setMsg(explain(err), "err");
+    }
+  });
+
+  $("authenticate").addEventListener("click", async () => {
+    setMsg("");
+    try {
+      const credential = await getAssertion(pending.options);
+      const res = await api("/api/level5/authenticate/finish", { credential });
+      if (!res.ok) return setMsg(errorText(res), "err");
+      // Demo only: keep a copy of what was sent, standing in for an attacker who recorded
+      // the traffic. The attacker view tries to replay it.
+      try { localStorage.setItem("level5.wiretap", JSON.stringify({ username, credential })); } catch {}
+      setMsg("");
+      $("who").textContent = res.data.username;
+      show("session-card");
+    } catch (err) {
+      setMsg(explain(err), "err");
+    }
+  });
+
+  for (const id of ["back1", "back2"]) $(id).addEventListener("click", () => { setMsg(""); show("login-card"); });
+
+  $("logout").addEventListener("click", async () => {
+    await api("/api/level5/logout", {});
+    show("login-card");
+    setMsg("Logged out.", "ok");
+  });
+
+  api("/api/level5/me").then((res) => {
+    if (res.ok) { $("who").textContent = res.data.username; show("session-card"); }
+  });
+</script>
+</body>
+</html>
