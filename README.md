@@ -246,5 +246,5 @@ git checkout level-3
 - [CyberDrewX](https://github.com/CyberDrewX)
 ## License
 
-TBD. Choose one (for example MIT) before relying on this beyond the class.
+
 
