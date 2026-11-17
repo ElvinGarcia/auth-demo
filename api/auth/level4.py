@@ -19,6 +19,7 @@ from api.sessions import (
     delete_session,
     get_user_by_session,
     set_session_cookie,
+    session_cookie_name,
 )
 
 LEVEL = 4
@@ -206,12 +207,12 @@ def verify(body: CodeBody, response: Response, pending: str | None = Cookie(defa
         raise HTTPException(status_code=401, detail="Wrong code")
 
     response.delete_cookie(PENDING_COOKIE, path="/api/level4")
-    set_session_cookie(response, create_session(user_id))
+    set_session_cookie(response, create_session(user_id), LEVEL)
     return {"username": username}
 
 
 @router.get("/me")
-def me(session: str | None = Cookie(default=None)):
+def me(session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL))):
     user = get_user_by_session(session)
     if user is None or user["level"] != LEVEL:
         raise HTTPException(status_code=401, detail="Not logged in")
@@ -219,8 +220,8 @@ def me(session: str | None = Cookie(default=None)):
 
 
 @router.post("/logout")
-def logout(response: Response, session: str | None = Cookie(default=None)):
-    delete_session(session)
-    clear_session_cookie(response)
+def logout(response: Response, session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL))):
+    delete_session(session, LEVEL)
+    clear_session_cookie(response, LEVEL)
     response.delete_cookie(PENDING_COOKIE, path="/api/level4")
     return {"ok": True}

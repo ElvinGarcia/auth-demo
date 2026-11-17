@@ -110,6 +110,11 @@ There is no registration. The **first login with a new username creates the
 account** at that level, using whatever password you typed; later logins must
 match it. The same username can exist at several levels as separate accounts.
 
+Each level has its own session cookie, scoped to that level's API. You can stay
+logged in at all six levels in the same browser; logging in or out at one level
+does not affect the others. Attacker views use their own level's session too.
+After upgrading from the shared-cookie version, log in again at each level.
+
 Four weak seeded accounts exist at every level so the attacker views have
 something to attack: `admin`, `alice`, `bob` and `carol`. Attacker views only
 ever show the seeded accounts plus **your own**, never other visitors'.

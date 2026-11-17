@@ -4,7 +4,7 @@ from fastapi import APIRouter, Cookie, HTTPException
 
 from api.auth.level4 import LEVEL, SEED_ACCOUNTS
 from api.db import db
-from api.sessions import get_user_by_session
+from api.sessions import get_user_by_session, session_cookie_name
 
 router = APIRouter(prefix="/api/level4/attacker", tags=["level4-attacker"])
 
@@ -15,7 +15,7 @@ def _enabled() -> bool:
 
 
 @router.get("/dump")
-def dump(session: str | None = Cookie(default=None)):
+def dump(session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL))):
     """What a thief holding a copy of the TOTP table sees.
 
     Seeded demo accounts plus the caller's own row, same privacy rule as the other levels.

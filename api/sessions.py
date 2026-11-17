@@ -8,7 +8,6 @@ from fastapi import Response
 
 from api.db import db
 
-SESSION_COOKIE = "session"
 SESSION_TTL = timedelta(hours=8)
 # Set COOKIE_SECURE=1 in production (HTTPS). Must be off for http://localhost.
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
@@ -16,6 +15,14 @@ COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def session_cookie_name(level: int) -> str:
+    return f"level{level}_session"
+
+
+def session_cookie_path(level: int) -> str:
+    return f"/api/level{level}"
 
 
 def create_session(user_id: int) -> str:
@@ -47,23 +54,27 @@ def get_user_by_session(token: str | None) -> dict | None:
         return {"id": row["id"], "level": row["level"], "username": row["username"]}
 
 
-def delete_session(token: str | None) -> None:
+def delete_session(token: str | None, level: int) -> None:
     if token:
         with db() as conn:
-            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            conn.execute(
+                """DELETE FROM sessions WHERE token = ? AND user_id IN
+                   (SELECT id FROM users WHERE level = ?)""",
+                (token, level),
+            )
 
 
-def set_session_cookie(response: Response, token: str) -> None:
+def set_session_cookie(response: Response, token: str, level: int) -> None:
     response.set_cookie(
-        SESSION_COOKIE,
+        session_cookie_name(level),
         token,
         httponly=True,
         samesite="lax",
         secure=COOKIE_SECURE,
         max_age=int(SESSION_TTL.total_seconds()),
-        path="/",
+        path=session_cookie_path(level),
     )
 
 
-def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE, path="/")
+def clear_session_cookie(response: Response, level: int) -> None:
+    response.delete_cookie(session_cookie_name(level), path=session_cookie_path(level))

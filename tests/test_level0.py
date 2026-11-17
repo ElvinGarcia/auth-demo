@@ -25,9 +25,9 @@ def test_me_requires_login(client):
 
 def test_logout_invalidates_session_server_side(client):
     login(client)
-    token = client.cookies.get("session")
+    token = client.cookies.get("level0_session")
     client.post("/api/level0/logout")
-    client.cookies.set("session", token)  # replay the old cookie
+    client.cookies.set("level0_session", token, path="/api/level0")  # replay the old cookie
     assert client.get("/api/level0/me").status_code == 401
 
 

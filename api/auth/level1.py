@@ -9,6 +9,7 @@ from api.sessions import (
     delete_session,
     get_user_by_session,
     set_session_cookie,
+    session_cookie_name,
 )
 
 LEVEL = 1
@@ -69,12 +70,12 @@ def login(creds: Credentials, response: Response):
         if not verify_password(creds.password, row["password"]):
             raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    set_session_cookie(response, create_session(row["id"]))
+    set_session_cookie(response, create_session(row["id"]), LEVEL)
     return {"username": creds.username, "created": created}
 
 
 @router.get("/me")
-def me(session: str | None = Cookie(default=None)):
+def me(session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL))):
     user = get_user_by_session(session)
     if user is None or user["level"] != LEVEL:
         raise HTTPException(status_code=401, detail="Not logged in")
@@ -82,7 +83,7 @@ def me(session: str | None = Cookie(default=None)):
 
 
 @router.post("/logout")
-def logout(response: Response, session: str | None = Cookie(default=None)):
-    delete_session(session)
-    clear_session_cookie(response)
+def logout(response: Response, session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL))):
+    delete_session(session, LEVEL)
+    clear_session_cookie(response, LEVEL)
     return {"ok": True}

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Cookie, HTTPException, Response
 
 from api.auth.level3 import LEVEL, SEED_ACCOUNTS, ensure_mailbox_device
 from api.db import db
-from api.sessions import get_user_by_session
+from api.sessions import get_user_by_session, session_cookie_name
 
 router = APIRouter(prefix="/api/level3/attacker", tags=["level3-attacker"])
 
@@ -15,7 +15,7 @@ def _enabled() -> bool:
 
 
 @router.get("/targets")
-def targets(response: Response, session: str | None = Cookie(default=None),
+def targets(response: Response, session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL)),
             mailbox: str | None = Cookie(default=None)):
     """Seeded demo accounts plus the caller's own. Never other visitors."""
     if not _enabled():

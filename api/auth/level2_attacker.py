@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from api.auth.level2 import LEVEL, SEED_ACCOUNTS, ensure_phone
 from api.db import db
-from api.sessions import get_user_by_session
+from api.sessions import get_user_by_session, session_cookie_name
 
 router = APIRouter(prefix="/api/level2/attacker", tags=["level2-attacker"])
 
@@ -25,7 +25,7 @@ def _allowed_usernames(session: str | None) -> set[str]:
 
 
 @router.get("/targets")
-def targets(response: Response, session: str | None = Cookie(default=None),
+def targets(response: Response, session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL)),
             phone: str | None = Cookie(default=None)):
     if not _enabled():
         raise HTTPException(status_code=404, detail="Not found")
@@ -50,7 +50,7 @@ class SwapBody(BaseModel):
 
 
 @router.post("/sim-swap")
-def sim_swap(body: SwapBody, response: Response, session: str | None = Cookie(default=None),
+def sim_swap(body: SwapBody, response: Response, session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL)),
              phone: str | None = Cookie(default=None)):
     """Simulates a carrier moving the victim's number onto the attacker's SIM."""
     if not _enabled():

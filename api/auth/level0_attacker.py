@@ -6,7 +6,7 @@ from fastapi import APIRouter, Cookie, HTTPException
 
 from api.auth.level0 import LEVEL, SEED_ACCOUNTS
 from api.db import db
-from api.sessions import get_user_by_session
+from api.sessions import get_user_by_session, session_cookie_name
 
 router = APIRouter(prefix="/api/level0/attacker", tags=["level0-attacker"])
 
@@ -26,7 +26,7 @@ def _hash(password: str) -> str:
 
 
 @router.get("/breach")
-def breach(session: str | None = Cookie(default=None)):
+def breach(session: str | None = Cookie(default=None, alias=session_cookie_name(LEVEL))):
     if not _enabled():
         raise HTTPException(status_code=404, detail="Not found")
 
